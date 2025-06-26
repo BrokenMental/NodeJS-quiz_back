@@ -9,7 +9,15 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // CORS 설정
-app.use(cors());
+app.use(cors({
+  origin: '*', // 모든 origin 허용
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: false
+}));
+
+// 추가적으로 명시적 OPTIONS 핸들러
+app.options('*', cors());
 app.use(express.json());
 
 // MongoDB 연결 - 환경변수 사용
