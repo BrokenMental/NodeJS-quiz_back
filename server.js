@@ -222,6 +222,21 @@ app.delete('/api/wrong-answers/:wrongAnswerId', async (req, res) => {
   }
 });
 
+// 사용자 계정 삭제 API
+app.delete('/api/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // 해당 사용자의 모든 오답 삭제
+    await WrongAnswer.deleteMany({ userId });
+    
+    res.json({ success: true, message: '사용자 데이터가 삭제되었습니다.' });
+  } catch (error) {
+    console.error('사용자 삭제 실패:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // 404 핸들러
 app.use('*', (req, res) => {
   res.status(404).json({ message: '요청한 경로를 찾을 수 없습니다.' });
