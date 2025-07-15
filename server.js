@@ -103,6 +103,113 @@ app.get('/api/question-by-text', async (req, res) => {
   }
 });
 
+const solvedQuestionSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  questionId: { type: String, required: true }, // Quiz 컬렉션의 _id
+  category: { type: String, required: true },
+  isCorrect: { type: Boolean, required: true },
+  solvedAt: { type: Date, default: Date.now },
+  timeSpent: { type: Number }, // 문제 풀이에 걸린 시간(초)
+});
+
+// 복합 인덱스로 중복 방지 및 성능 최적화
+solvedQuestionSchema.index({ userId: 1, questionId: 1 }, { unique: true });
+solvedQuestionSchema.index({ userId: 1, category: 1 });
+
+const SolvedQuestion = mongoose.model('SolvedQuestion', solvedQuestionSchema, 'solvedQuestions');
+
+// 문제 풀이 기록 저장
+app.post('/api/solved-questions/save', async (req, res) => {
+  try {
+    const { userId, questionId, category, isCorrect, timeSpent } = req.body;
+    
+    // 기존 기록이 있으면 업데이트, 없으면 생성
+    const result = await SolvedQuestion.findOneAndUpdate(
+      { userId, questionId },
+      { 
+        category, 
+        isCorrect, 
+        timeSpent,
+        solvedAt: new Date()
+      },
+      { 
+        upsert: true, 
+        new: true 
+      }
+    );
+    
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('문제 풀이 기록 저장 실패:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 도전하기용 - 안 푼 문제들만 조회
+app.get('/api/questions/unsolved/:userId/:category', async (req, res) => {
+  try {
+    const { userId, category } = req.params;
+    const { limit = 10 } = req.query;
+    
+    // 해당 사용자가 이미 푼 문제 ID들 조회
+    const solvedQuestions = await SolvedQuestion.find(
+      { userId, category },
+      { questionId: 1 }
+    );
+    const solvedQuestionIds = solvedQuestions.map(sq => sq.questionId);
+    
+    // 안 푼 문제들만 조회
+    const unsolvedQuestions = await Quiz.find({
+      category,
+      _id: { $nin: solvedQuestionIds }
+    });
+    
+    // 문제가 부족하면 기존 문제도 포함 (선택사항)
+    let finalQuestions = unsolvedQuestions;
+    if (unsolvedQuestions.length < limit) {
+      const additionalQuestions = await Quiz.find({ category })
+        .limit(limit - unsolvedQuestions.length);
+      finalQuestions = [...unsolvedQuestions, ...additionalQuestions];
+    }
+    
+    // 랜덤 섞기 후 제한
+    const shuffled = finalQuestions
+      .sort(() => 0.5 - Math.random())
+      .slice(0, limit);
+    
+    res.json(shuffled);
+  } catch (error) {
+    console.error('미해결 문제 조회 실패:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// 사용자 통계 조회
+app.get('/api/stats/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const stats = await SolvedQuestion.aggregate([
+      { $match: { userId } },
+      {
+        $group: {
+          _id: '$category',
+          totalSolved: { $sum: 1 },
+          correctCount: { 
+            $sum: { $cond: ['$isCorrect', 1, 0] } 
+          },
+          avgTime: { $avg: '$timeSpent' }
+        }
+      }
+    ]);
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('통계 조회 실패:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // 오답 저장
 app.post('/api/wrong-answers/save', async (req, res) => {
   try {
